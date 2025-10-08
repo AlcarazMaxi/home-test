@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # Demo application service
+  demo-app:
+    image: automaticbytes/demo-app
+    container_name: demo-app
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/api/inventory"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - test-network
+
+  # UI Tests service
+  ui-tests:
+    build:
+      context: ./ui-tests
+      dockerfile: Dockerfile
+    container_name: ui-tests
+    depends_on:
+      demo-app:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://demo-app:3100
+      - HEADLESS=true
+      - GENERATE_REPORTS=true
+      - RUN_A11Y_CHECKS=true
+      - RUN_LIGHTHOUSE=true
+    volumes:
+      - ./ui-tests/reports:/app/reports
+      - ./ui-tests/screenshots:/app/screenshots
+      - ./ui-tests/traces:/app/traces
+      - ./ui-tests/videos:/app/videos
+    networks:
+      - test-network
+    command: ["npm", "run", "test"]
+
+  # API Tests service
+  api-tests:
+    build:
+      context: ./api-tests
+      dockerfile: Dockerfile
+    container_name: api-tests
+    depends_on:
+      demo-app:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://demo-app:3100/api
+      - KARATE_ENV=dev
+    volumes:
+      - ./api-tests/target:/app/target
+    networks:
+      - test-network
+    command: ["mvn", "test"]
+
+  # Lighthouse CI service
+  lighthouse:
+    image: mcr.microsoft.com/playwright:v1.40.0-focal
+    container_name: lighthouse
+    depends_on:
+      demo-app:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://demo-app:3100
+    volumes:
+      - ./ui-tests/reports/lighthouse:/app/reports
+    networks:
+      - test-network
+    command: >
+      sh -c "
+        npm install -g @lhci/cli &&
+        lhci autorun --collect.url=http://demo-app:3100/login --collect.url=http://demo-app:3100/checkout
+      "
+
+  # OWASP ZAP service
+  zap:
+    image: owasp/zap2docker-stable
+    container_name: zap
+    depends_on:
+      demo-app:
+        condition: service_healthy
+    volumes:
+      - ./security-reports:/zap/wrk
+    networks:
+      - test-network
+    command: >
+      sh -c "
+        zap-baseline.py -t http://demo-app:3100 -J /zap/wrk/zap-report.json &&
+        zap-full-scan.py -t http://demo-app:3100 -J /zap/wrk/zap-full-report.json
+      "
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  ui-reports:
+  api-reports:
+  security-reports:
