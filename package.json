@@ -1,0 +1,25 @@
+{
+  "name": "automation-project-validation",
+  "version": "1.0.0",
+  "description": "Principal QA Engineer - Project Validation Script",
+  "main": "validate-project.js",
+  "scripts": {
+    "validate": "node validate-project.js",
+    "validate:quick": "node validate-project.js --quick",
+    "validate:ui": "cd ui-tests && npm test",
+    "validate:api": "cd api-tests && mvn test",
+    "validate:full": "npm run validate:ui && npm run validate:api && npm run validate"
+  },
+  "keywords": [
+    "automation",
+    "testing",
+    "validation",
+    "qa"
+  ],
+  "author": "Principal QA Engineer",
+  "license": "MIT",
+  "dependencies": {
+    "@playwright/test": "^1.56.0",
+    "child_process": "^1.0.2"
+  }
+}
