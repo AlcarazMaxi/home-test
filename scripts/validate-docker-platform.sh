@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Principal QA Engineer: Docker Platform Compatibility Validation Script
+# Docker Platform Compatibility Validation Script
 # Comprehensive testing for Docker platform compatibility issues
 # Designed to prevent CI/CD failures and ensure cross-platform support
 

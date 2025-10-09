@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Principal QA Engineer: Docker Platform Resolution Script
+# Docker Platform Resolution Script
 # Comprehensive solution for Docker platform compatibility issues
 # Handles platform mismatches, image availability, and fallback strategies
 

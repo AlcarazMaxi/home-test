@@ -1,0 +1,147 @@
+name: 'Docker Platform Setup'
+description: 'Production-level Docker platform detection and container management'
+author: 'QA Automation Team'
+
+inputs:
+  image:
+    description: 'Docker image to run'
+    required: true
+    default: 'automaticbytes/demo-app:latest'
+  port:
+    description: 'Port to expose'
+    required: false
+    default: '3100'
+  container_name:
+    description: 'Container name'
+    required: false
+    default: 'demo-app'
+  max_retries:
+    description: 'Maximum retry attempts'
+    required: false
+    default: '10'
+  retry_delay:
+    description: 'Delay between retries in seconds'
+    required: false
+    default: '3'
+  enable_qemu:
+    description: 'Enable QEMU emulation for cross-platform support'
+    required: false
+    default: 'true'
+  health_check_timeout:
+    description: 'Health check timeout in seconds'
+    required: false
+    default: '60'
+
+outputs:
+  container_ready:
+    description: 'Whether the container is ready'
+    value: ${{ steps.docker-setup.outputs.container_ready }}
+  container_name:
+    description: 'Name of the started container'
+    value: ${{ steps.docker-setup.outputs.container_name }}
+  container_port:
+    description: 'Port of the started container'
+    value: ${{ steps.docker-setup.outputs.container_port }}
+  container_platform:
+    description: 'Platform of the started container'
+    value: ${{ steps.docker-setup.outputs.container_platform }}
+  fallback_used:
+    description: 'Whether fallback mechanism was used'
+    value: ${{ steps.docker-setup.outputs.fallback_used }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Make platform detector executable
+      shell: bash
+      run: chmod +x scripts/docker-platform-detector.sh
+
+    - name: Setup QEMU emulation
+      if: inputs.enable_qemu == 'true'
+      shell: bash
+      run: |
+        echo "Setting up QEMU emulation for cross-platform support..."
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        
+        # Setup buildx for multi-platform support
+        if ! docker buildx ls | grep -q "multiarch"; then
+          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx inspect --bootstrap
+        fi
+        
+        echo "QEMU emulation setup completed"
+
+    - name: Run Docker Platform Detection
+      id: docker-setup
+      shell: bash
+      run: |
+        echo "Starting Docker platform detection and compatibility check..."
+        
+        # Set environment variables
+        export IMAGE="${{ inputs.image }}"
+        export PORT="${{ inputs.port }}"
+        export CONTAINER_NAME="${{ inputs.container_name }}"
+        export MAX_RETRIES="${{ inputs.max_retries }}"
+        export RETRY_DELAY="${{ inputs.retry_delay }}"
+        export HEALTH_CHECK_TIMEOUT="${{ inputs.health_check_timeout }}"
+        
+        # Run the platform detector script
+        if ./scripts/docker-platform-detector.sh "$IMAGE" "$PORT" "$CONTAINER_NAME"; then
+          echo "container_ready=true" >> $GITHUB_OUTPUT
+          echo "container_name=$CONTAINER_NAME" >> $GITHUB_OUTPUT
+          echo "container_port=$PORT" >> $GITHUB_OUTPUT
+          echo "container_platform=$(docker inspect $CONTAINER_NAME --format '{{.Architecture}}' 2>/dev/null || echo 'linux/amd64')" >> $GITHUB_OUTPUT
+          echo "fallback_used=false" >> $GITHUB_OUTPUT
+          echo "✅ Docker container started successfully"
+        else
+          echo "container_ready=false" >> $GITHUB_OUTPUT
+          echo "container_name=" >> $GITHUB_OUTPUT
+          echo "container_port=" >> $GITHUB_OUTPUT
+          echo "container_platform=" >> $GITHUB_OUTPUT
+          echo "fallback_used=true" >> $GITHUB_OUTPUT
+          echo "❌ Docker container failed to start"
+        fi
+
+    - name: Validate Container Health
+      if: steps.docker-setup.outputs.container_ready == 'true'
+      shell: bash
+      run: |
+        echo "Validating container health..."
+        
+        # Wait for container to be accessible
+        local retry_count=0
+        local max_retries=${{ inputs.max_retries }}
+        local retry_delay=${{ inputs.retry_delay }}
+        
+        while [[ $retry_count -lt $max_retries ]]; do
+          if curl -f "http://localhost:${{ inputs.port }}" >/dev/null 2>&1; then
+            echo "✅ Container is healthy and accessible"
+            exit 0
+          fi
+          
+          echo "Waiting for container to be accessible... (attempt $((retry_count + 1))/$max_retries)"
+          sleep $retry_delay
+          ((retry_count++))
+        done
+        
+        echo "❌ Container health validation failed"
+        echo "Container logs:"
+        docker logs "${{ inputs.container_name }}" 2>&1 || echo "Could not retrieve container logs"
+        exit 1
+
+    - name: Display Container Information
+      if: steps.docker-setup.outputs.container_ready == 'true'
+      shell: bash
+      run: |
+        echo "📊 Container Information:"
+        echo "  Name: ${{ steps.docker-setup.outputs.container_name }}"
+        echo "  Port: ${{ steps.docker-setup.outputs.container_port }}"
+        echo "  Platform: ${{ steps.docker-setup.outputs.container_platform }}"
+        echo "  Status: $(docker ps --filter name=${{ steps.docker-setup.outputs.container_name }} --format '{{.Status}}')"
+        echo "  Health: $(docker inspect ${{ steps.docker-setup.outputs.container_name }} --format '{{.State.Health.Status}}' 2>/dev/null || echo 'N/A')"
