@@ -5,7 +5,7 @@
 
 ## Overview
 
-This project demonstrates world-class QA automation practices with clear, professional English throughout the codebase, documentation, and commit messages. It includes:
+This project includes:
 
 1. **UI Automation Tests** (`ui-tests/`) — Playwright + TypeScript + POM
 2. **API Automation Tests** (`api-tests/`) — Karate + Java 17 + Maven
